@@ -1,6 +1,5 @@
 package com.github.webetc.livedata;
 
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -18,9 +17,7 @@ public class LiveObservable {
 
 
     public void notifyWatchers(LiveResponse response) {
-        Iterator<LiveObserver> iWatchers = watchers.iterator();
-        while (iWatchers.hasNext()) {
-            LiveObserver o = iWatchers.next();
+        for (LiveObserver o : watchers) {
             o.send(response);
         }
     }

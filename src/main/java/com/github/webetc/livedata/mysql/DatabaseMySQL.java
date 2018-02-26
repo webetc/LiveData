@@ -7,12 +7,15 @@ import com.github.webetc.livedata.LiveTable;
 import com.github.webetc.livedata.LiveTransactionDatabase;
 
 import java.sql.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 
 public class DatabaseMySQL extends LiveTransactionDatabase {
 
-    private Map<String, Long> lastTableId = new HashMap<String, Long>();
+    private Map<String, Long> lastTableId = new HashMap<>();
     private String hostname;
     private Integer port;
     private String url;
@@ -31,7 +34,7 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
         super();
         this.hostname = hostname;
         this.port = port;
-        this.url = this.url = "jdbc:mysql://" + hostname + ":" + port;
+        this.url = "jdbc:mysql://" + hostname + ":" + port;
         this.user = user;
         this.password = password;
         start();
@@ -40,15 +43,14 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
 
     @Override
     protected LiveResponse getData(String schema, String table, String where) {
-        LiveResponse response = new LiveResponse(LiveResponse.Load, schema, table);
+        String action = where == null ? LiveResponse.Load : LiveResponse.Modify;
+        LiveResponse response = new LiveResponse(action, schema, table);
 
         if (getData(response, where)) {
             String tablePath = schema.toLowerCase() + "." + table.toLowerCase();
 
             // Set initial last id for table
-            if (lastTableId.get(tablePath) == null) {
-                lastTableId.put(tablePath, response.largestId);
-            }
+            lastTableId.putIfAbsent(tablePath, response.largestId);
 
             return response;
         } else {
@@ -145,7 +147,7 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
 
             // Add row data
             while (rs.next()) {
-                List<String> row = new ArrayList<String>();
+                List<String> row = new ArrayList<>();
                 for (int i = 1; i <= rsmd.getColumnCount(); i++) {
                     Object o = rs.getObject(i);
                     if (o != null)
@@ -172,12 +174,14 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
             e.printStackTrace();
         } finally {
             try {
-                rs.close();
+                if (rs != null)
+                    rs.close();
             } catch (SQLException e) {
                 e.printStackTrace();
             }
             try {
-                con.close();
+                if (con != null)
+                    con.close();
             } catch (SQLException e) {
                 e.printStackTrace();
             }
@@ -193,13 +197,7 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
 
         // Start the replication client
         BinaryLogClient client = new BinaryLogClient(hostname, port, user, password);
-        client.registerEventListener(new BinaryLogClient.EventListener() {
-
-            @Override
-            public void onEvent(Event event) {
-                processDatabaseEvent(event);
-            }
-        });
+        client.registerEventListener(this::processDatabaseEvent);
 
         try {
             client.connect(1000);
@@ -224,9 +222,7 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
             }
         } else if (EventType.isRowMutation(et)) {
             if (tablemap_db != null && tablemap_table != null) {
-                Iterator<LiveTable> iLiveTable = liveTables.iterator();
-                while (iLiveTable.hasNext()) {
-                    LiveTable l = iLiveTable.next();
+                for (LiveTable l : liveTables) {
                     if (tablemap_db.equals(l.getSchemaName()) && tablemap_table.equals(l.getTableName())) {
                         // TODO: handle non-gtid mutations
                     }
@@ -250,8 +246,6 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
                 }
             }
 
-        } else {
-//                    System.err.println("\n" + event.toString());
         }
     }
 

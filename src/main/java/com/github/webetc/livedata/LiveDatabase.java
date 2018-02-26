@@ -17,7 +17,7 @@ public abstract class LiveDatabase {
         }
 
         public static LiveEvent create(LiveResponse response) {
-            Collection<LiveResponse> responses = new ArrayList<LiveResponse>(1);
+            Collection<LiveResponse> responses = new ArrayList<>(1);
             responses.add(response);
             return new LiveEventResponse(responses);
         }
@@ -59,33 +59,31 @@ public abstract class LiveDatabase {
 
     public LiveDatabase() {
         // LiveEvent queue processing thread
-        Thread thread = new Thread(new Runnable() {
-            public void run() {
-                while (true) {
-                    try {
-                        LiveEvent event = operationQueue.take();
-                        if (LiveEventRequest.class.isInstance(event)) {
-                            // Send data so specific observer
-                            sendData((LiveEventRequest) event);
-                        } else if (LiveEventResponse.class.isInstance(event)) {
-                            LiveEventResponse ler = (LiveEventResponse) event;
-                            // Notify LiveTable watchers
-                            for (LiveResponse response : ler.responses) {
-                                Iterator<LiveTable> iLiveTable = getTables();
-                                String lowerSchema = response.getSchema().toLowerCase();
-                                String lowerTable = response.getTable().toLowerCase();
-                                while (iLiveTable.hasNext()) {
-                                    LiveTable l = iLiveTable.next();
-                                    if (lowerTable.equals(l.getTableName())
-                                            && lowerSchema.equals(l.getSchemaName())) {
-                                        l.notifyWatchers(response);
-                                    }
+        Thread thread = new Thread(() -> {
+            while (true) {
+                try {
+                    LiveEvent event = operationQueue.take();
+                    if (LiveEventRequest.class.isInstance(event)) {
+                        // Send data so specific observer
+                        sendData((LiveEventRequest) event);
+                    } else if (LiveEventResponse.class.isInstance(event)) {
+                        LiveEventResponse ler = (LiveEventResponse) event;
+                        // Notify LiveTable watchers
+                        for (LiveResponse response : ler.responses) {
+                            Iterator<LiveTable> iLiveTable = getTables();
+                            String lowerSchema = response.getSchema().toLowerCase();
+                            String lowerTable = response.getTable().toLowerCase();
+                            while (iLiveTable.hasNext()) {
+                                LiveTable l = iLiveTable.next();
+                                if (lowerTable.equals(l.getTableName())
+                                        && lowerSchema.equals(l.getSchemaName())) {
+                                    l.notifyWatchers(response);
                                 }
                             }
                         }
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
                     }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
             }
         });

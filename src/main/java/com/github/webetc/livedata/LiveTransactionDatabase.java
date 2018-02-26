@@ -55,7 +55,6 @@ public abstract class LiveTransactionDatabase extends LiveDatabase {
 
     protected void processTransactionSQL(String schema, String sql) {
         try {
-            LiveResponse response = null;
             String sqlLower = sql.substring(0, Math.min(100, sql.length() - 1)).toLowerCase();
             boolean good = false;
             Iterator<LiveTable> iLiveTable = getTables();

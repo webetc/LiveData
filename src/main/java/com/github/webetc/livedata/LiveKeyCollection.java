@@ -9,7 +9,7 @@ public class LiveKeyCollection implements LiveObserver {
     private LiveObserver observer;
     private String keyColumn;
     private final Collection<String> keyConstraints = new HashSet<>();
-    private final Collection<String> idIndex = new HashSet<>();
+    private final Map<String, String> idKeyIndex = new HashMap<>();
     private final Map<String, Collection<String>> keyIdIndex = new HashMap<>();
 
 
@@ -60,16 +60,45 @@ public class LiveKeyCollection implements LiveObserver {
             keyConstraints.remove(key);
         }
 
-        // TODO: remove rows from existing index
+        // Remove rows from existing indexes
+        Collection<String> keyIds;
+        synchronized (keyIdIndex) {
+            keyIds = keyIdIndex.get(key);
+            keyIdIndex.remove(key);
+        }
+        synchronized (idKeyIndex) {
+            if (keyIds != null) {
+                for (String id : keyIds) {
+                    idKeyIndex.remove(id);
+                }
+            }
+        }
     }
 
 
-    private void updateIdIndex(String key, boolean include) {
-        synchronized (idIndex) {
-            if (include)
-                idIndex.add(key);
-            else
-                idIndex.remove(key);
+    private void updateIdIndex(String id, String key) {
+        if (key != null) {
+            synchronized (idKeyIndex) {
+                idKeyIndex.put(id, key);
+            }
+            synchronized (keyIdIndex) {
+                Collection<String> ids = keyIdIndex.get(key);
+                if (ids == null) {
+                    ids = new HashSet<>();
+                    keyIdIndex.put(key, ids);
+                }
+                ids.add(id);
+            }
+        } else {
+            synchronized (idKeyIndex) {
+                key = idKeyIndex.get(id);
+                idKeyIndex.remove(id);
+            }
+            synchronized (keyIdIndex) {
+                Collection<String> ids = keyIdIndex.get(key);
+                if (ids != null)
+                    ids.remove(id);
+            }
         }
     }
 
@@ -92,9 +121,9 @@ public class LiveKeyCollection implements LiveObserver {
             String id = row.get(idCol);
             boolean addRow = false;
 
-            boolean contained = false;
-            synchronized (idIndex) {
-                contained = idIndex.contains(id);
+            boolean contained;
+            synchronized (idKeyIndex) {
+                contained = idKeyIndex.get(id) != null;
             }
             if (contained) {
                 // Row is already in id index to just add
@@ -103,15 +132,17 @@ public class LiveKeyCollection implements LiveObserver {
             } else if (keyColIndex != null) {
                 // Check if row matches constraint
                 String key = row.get(keyColIndex);
-                boolean keyMatches = false;
+                boolean keyMatches;
                 synchronized (keyConstraints) {
                     keyMatches = keyConstraints.contains(key);
                 }
                 if (keyMatches) {
-                    // NOTE: if key column was updated to something that now matches
-                    // not all of the columns will be available so will ony work
-                    // on a foreign key that doesn't get changed for now.
-                    updateIdIndex(id, true);
+                    /*
+                    NOTE: if key column was updated to something that now matches
+                    not all of the columns will be available so will ony work
+                    on a foreign key that doesn't get changed for now.
+                    */
+                    updateIdIndex(id, key);
                     addRow = true;
                 }
             }
@@ -119,7 +150,7 @@ public class LiveKeyCollection implements LiveObserver {
             if (addRow) {
                 response.addRecord(row);
                 if (response.getAction().equals(LiveResponse.Delete)) {
-                    updateIdIndex(id, false);
+                    updateIdIndex(id, null);
                 }
             }
         }
