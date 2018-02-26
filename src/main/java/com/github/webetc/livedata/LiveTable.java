@@ -34,7 +34,7 @@ public class LiveTable extends LiveObservable {
     @Override
     public void addWatcher(LiveObserver o) {
         super.addWatcher(o);
-        database.getAllData(this.schemaName, this.tableName, o);
+        database.add(LiveDatabase.LiveEvent.create(this.schemaName, this.tableName, o));
     }
 
 

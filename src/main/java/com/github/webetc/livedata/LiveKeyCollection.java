@@ -1,9 +1,6 @@
 package com.github.webetc.livedata;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
+import java.util.*;
 
 public class LiveKeyCollection implements LiveObserver {
 
@@ -13,6 +10,7 @@ public class LiveKeyCollection implements LiveObserver {
     private String keyColumn;
     private final Collection<String> keyConstraints = new HashSet<>();
     private final Collection<String> idIndex = new HashSet<>();
+    private final Map<String, Collection<String>> keyIdIndex = new HashMap<>();
 
 
     public LiveKeyCollection(String schemaName, String tableName,
@@ -49,7 +47,11 @@ public class LiveKeyCollection implements LiveObserver {
             keyConstraints.add(key);
         }
 
-        observer.send(database.getAllWithConstraint(table.getSchemaName(), table.getTableName(), keyColumn, key));
+        database.add(LiveDatabase.LiveEvent.create(
+                table.getSchemaName(),
+                table.getTableName(),
+                keyColumn + " = " + key,
+                observer));
     }
 
 
@@ -58,7 +60,7 @@ public class LiveKeyCollection implements LiveObserver {
             keyConstraints.remove(key);
         }
 
-        // TODO: remove rows from existing index and notify watchers
+        // TODO: remove rows from existing index
     }
 
 

@@ -2,64 +2,47 @@ package com.github.webetc.livedata.mysql;
 
 import com.github.shyiko.mysql.binlog.BinaryLogClient;
 import com.github.shyiko.mysql.binlog.event.*;
-import com.github.webetc.livedata.*;
+import com.github.webetc.livedata.LiveResponse;
+import com.github.webetc.livedata.LiveTable;
+import com.github.webetc.livedata.LiveTransactionDatabase;
 
 import java.sql.*;
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
 
-public class DatabaseMySQL implements LiveDatabase {
 
-    private List<LiveTable> liveTables = new CopyOnWriteArrayList<>();
-    private Map<String, String> primaryKeys = new HashMap<>();
+public class DatabaseMySQL extends LiveTransactionDatabase {
+
     private Map<String, Long> lastTableId = new HashMap<String, Long>();
-    private LiveTransaction transaction;
     private String hostname;
-    private Integer port = 3306;
+    private Integer port;
     private String url;
     private String user;
     private String password;
+    private String tablemap_db = null;
+    private String tablemap_table = null;
 
 
-    public DatabaseMySQL(String hostname, String user, String password) {
-        this.hostname = hostname;
-        this.url = "jdbc:mysql://" + hostname;
-        this.user = user;
-        this.password = password;
-        this.transaction = new LiveTransaction(this);
+    public DatabaseMySQL(String hostname, String user, String password) throws ClassNotFoundException {
+        this(hostname, 3306, user, password);
     }
 
 
-    public DatabaseMySQL(String hostname, Integer port, String user, String password) {
+    public DatabaseMySQL(String hostname, Integer port, String user, String password) throws ClassNotFoundException {
+        super();
         this.hostname = hostname;
         this.port = port;
         this.url = this.url = "jdbc:mysql://" + hostname + ":" + port;
         this.user = user;
         this.password = password;
-        this.transaction = new LiveTransaction(this);
-    }
-
-
-    public void add(LiveTable table) {
-        liveTables.add(table);
-    }
-
-
-    public void remove(LiveTable table) {
-        liveTables.remove(table);
+        start();
     }
 
 
     @Override
-    public Iterator<LiveTable> getTables() {
-        return liveTables.iterator();
-    }
-
-
-    public void getAllData(String schema, String table, LiveObserver observer) {
+    protected LiveResponse getData(String schema, String table, String where) {
         LiveResponse response = new LiveResponse(LiveResponse.Load, schema, table);
 
-        if (getData(response, null)) {
+        if (getData(response, where)) {
             String tablePath = schema.toLowerCase() + "." + table.toLowerCase();
 
             // Set initial last id for table
@@ -67,17 +50,16 @@ public class DatabaseMySQL implements LiveDatabase {
                 lastTableId.put(tablePath, response.largestId);
             }
 
-            // Send response
-            observer.send(response);
+            return response;
         } else {
             // Shouldn't get here unless db or network is down
-            observer.send(new LiveResponse(LiveResponse.Error, schema, table));
+            return new LiveResponse(LiveResponse.Error, schema, table);
         }
     }
 
 
     @Override
-    public LiveResponse getInsertedSinceLast(String schema, String table) {
+    protected LiveResponse getInserted(String schema, String table) {
         LiveResponse response = new LiveResponse(LiveResponse.Modify, schema, table);
         String tablePath = schema.toLowerCase() + "." + table.toLowerCase();
         String idCol = getPrimaryKey(schema, table);
@@ -91,13 +73,43 @@ public class DatabaseMySQL implements LiveDatabase {
 
 
     @Override
-    public LiveResponse getAllWithConstraint(String schema, String table, String constraintColumn, String constraintValue) {
-        LiveResponse response = new LiveResponse(LiveResponse.Modify, schema, table);
-        String where = "where " + constraintColumn + " = " + constraintValue;
-        if (getData(response, where)) {
-            return response;
+    protected String loadPrimaryKey(String schemaName, String tableName) {
+        Connection con = null;
+        ResultSet keys = null;
+        String primaryKey = null;
+        int count = 0;
+
+        try {
+            con = DriverManager.getConnection(url, user, password);
+            DatabaseMetaData meta = con.getMetaData();
+            keys = meta.getPrimaryKeys(schemaName, null, tableName);
+            while (keys.next()) {
+                count++;
+                primaryKey = keys.getString("COLUMN_NAME");
+            }
+
+            if (count == 1)
+                return primaryKey;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                if (keys != null)
+                    keys.close();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            try {
+                if (con != null)
+                    con.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
         }
-        return new LiveResponse(LiveResponse.Error, schema, table);
+
+        // Currently don't handle multiple keys
+        return null;
     }
 
 
@@ -176,59 +188,16 @@ public class DatabaseMySQL implements LiveDatabase {
     }
 
 
-    public void start() throws ClassNotFoundException {
+    private void start() throws ClassNotFoundException {
         Class.forName("com.mysql.jdbc.Driver");
+
+        // Start the replication client
         BinaryLogClient client = new BinaryLogClient(hostname, port, user, password);
         client.registerEventListener(new BinaryLogClient.EventListener() {
 
-            String tablemap_db = null;
-            String tablemap_table = null;
-
             @Override
             public void onEvent(Event event) {
-                EventType et = event.getHeader().getEventType();
-
-                if (et == EventType.TABLE_MAP) {
-                    EventData ed = event.getData();
-                    if (ed != null && TableMapEventData.class.isInstance(ed)) {
-                        TableMapEventData tmed = (TableMapEventData) ed;
-                        tablemap_db = tmed.getDatabase().toLowerCase();
-                        tablemap_table = tmed.getTable().toLowerCase();
-                    } else {
-                        tablemap_db = null;
-                        tablemap_table = null;
-                    }
-                } else if (EventType.isRowMutation(et)) {
-                    if (tablemap_db != null && tablemap_table != null) {
-                        Iterator<LiveTable> iLiveTable = liveTables.iterator();
-                        while (iLiveTable.hasNext()) {
-                            LiveTable l = iLiveTable.next();
-                            if (tablemap_db.equals(l.getSchemaName()) && tablemap_table.equals(l.getTableName())) {
-                                // TODO: handle non-gtid mutations
-                            }
-                        }
-                    }
-                } else if (et == EventType.ANONYMOUS_GTID || et == EventType.GTID) {
-                    transaction.start();
-                } else if (et == EventType.XID) {
-                    transaction.end(true);
-                } else if (et == EventType.QUERY) {
-                    EventData ed = event.getData();
-                    if (ed != null && QueryEventData.class.isInstance(ed)) {
-                        QueryEventData qed = (QueryEventData) ed;
-                        String sql = qed.getSql().substring(0, Math.min(10, qed.getSql().length())).toLowerCase();
-                        if (sql.startsWith("commit")) {
-                            transaction.end(true);
-                        } else if (sql.startsWith("rollback")) {
-                            transaction.end(false);
-                        } else {
-                            transaction.process(qed.getDatabase(), qed.getSql());
-                        }
-                    }
-
-                } else {
-//                    System.err.println("\n" + event.toString());
-                }
+                processDatabaseEvent(event);
             }
         });
 
@@ -240,54 +209,51 @@ public class DatabaseMySQL implements LiveDatabase {
     }
 
 
-    public String getPrimaryKey(String schemaName, String tableName) {
-        String tablePath = schemaName.toLowerCase() + "." + tableName.toLowerCase();
-        String key = primaryKeys.get(tablePath);
-        if (key == null) {
-            key = loadPrimaryKey(schemaName, tableName);
-            primaryKeys.put(tablePath, key);
+    private void processDatabaseEvent(Event event) {
+        EventType et = event.getHeader().getEventType();
+
+        if (et == EventType.TABLE_MAP) {
+            EventData ed = event.getData();
+            if (ed != null && TableMapEventData.class.isInstance(ed)) {
+                TableMapEventData tmed = (TableMapEventData) ed;
+                tablemap_db = tmed.getDatabase().toLowerCase();
+                tablemap_table = tmed.getTable().toLowerCase();
+            } else {
+                tablemap_db = null;
+                tablemap_table = null;
+            }
+        } else if (EventType.isRowMutation(et)) {
+            if (tablemap_db != null && tablemap_table != null) {
+                Iterator<LiveTable> iLiveTable = liveTables.iterator();
+                while (iLiveTable.hasNext()) {
+                    LiveTable l = iLiveTable.next();
+                    if (tablemap_db.equals(l.getSchemaName()) && tablemap_table.equals(l.getTableName())) {
+                        // TODO: handle non-gtid mutations
+                    }
+                }
+            }
+        } else if (et == EventType.ANONYMOUS_GTID || et == EventType.GTID) {
+            startTransaction();
+        } else if (et == EventType.XID) {
+            endTransaction(true);
+        } else if (et == EventType.QUERY) {
+            EventData ed = event.getData();
+            if (ed != null && QueryEventData.class.isInstance(ed)) {
+                QueryEventData qed = (QueryEventData) ed;
+                String sql = qed.getSql().substring(0, Math.min(10, qed.getSql().length())).toLowerCase();
+                if (sql.startsWith("commit")) {
+                    endTransaction(true);
+                } else if (sql.startsWith("rollback")) {
+                    endTransaction(false);
+                } else {
+                    processTransactionSQL(qed.getDatabase(), qed.getSql());
+                }
+            }
+
+        } else {
+//                    System.err.println("\n" + event.toString());
         }
-        return key;
     }
 
-
-    private String loadPrimaryKey(String schemaName, String tableName) {
-        Connection con = null;
-        ResultSet keys = null;
-        String primaryKey = null;
-        int count = 0;
-
-        try {
-            con = DriverManager.getConnection(url, user, password);
-            DatabaseMetaData meta = con.getMetaData();
-            keys = meta.getPrimaryKeys(schemaName, null, tableName);
-            while (keys.next()) {
-                count++;
-                primaryKey = keys.getString("COLUMN_NAME");
-            }
-
-            if (count == 1)
-                return primaryKey;
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-            try {
-                if (keys != null)
-                    keys.close();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-            try {
-                if (con != null)
-                    con.close();
-            } catch (SQLException e) {
-                e.printStackTrace();
-            }
-        }
-
-        // Currently don't handle multiple keys
-        return null;
-    }
 
 }

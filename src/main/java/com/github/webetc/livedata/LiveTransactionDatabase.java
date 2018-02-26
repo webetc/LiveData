@@ -12,27 +12,25 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-public class LiveTransaction {
+public abstract class LiveTransactionDatabase extends LiveDatabase {
     private List<LiveResponse> modifications = null;
     private List<LiveResponse> inserts = null;
     private List<LiveResponse> deletes = null;
 
-    private LiveDatabase database;
 
-
-    public LiveTransaction(LiveDatabase database) {
-        this.database = database;
+    public LiveTransactionDatabase() {
+        super();
     }
 
 
-    public void start() {
+    protected void startTransaction() {
         modifications = new ArrayList<>();
         inserts = new ArrayList<>();
         deletes = new ArrayList<>();
     }
 
 
-    public void end(boolean commit) {
+    protected void endTransaction(boolean commit) {
         if (!commit) {
             modifications = null;
             inserts = null;
@@ -46,31 +44,21 @@ public class LiveTransaction {
 
         // Collect inserts
         for (LiveResponse i : inserts) {
-            responses.add(database.getInsertedSinceLast(i.getSchema(), i.getTable()));
+            responses.add(getInserted(i.getSchema(), i.getTable()));
         }
 
         responses.addAll(deletes);
 
-        // Notify
-        for (LiveResponse response : responses) {
-            Iterator<LiveTable> iLiveTable = database.getTables();
-            String lowerTable = response.getTable().toLowerCase();
-            while (iLiveTable.hasNext()) {
-                LiveTable l = iLiveTable.next();
-                if (lowerTable.equals(l.getTableName())) {
-                    l.notifyWatchers(response);
-                }
-            }
-        }
+        add(LiveEvent.create(responses));
     }
 
 
-    public void process(String schema, String sql) {
+    protected void processTransactionSQL(String schema, String sql) {
         try {
             LiveResponse response = null;
             String sqlLower = sql.substring(0, Math.min(100, sql.length() - 1)).toLowerCase();
             boolean good = false;
-            Iterator<LiveTable> iLiveTable = database.getTables();
+            Iterator<LiveTable> iLiveTable = getTables();
             while (iLiveTable.hasNext()) {
                 LiveTable l = iLiveTable.next();
                 if (schema.toLowerCase().equals(l.getSchemaName())
