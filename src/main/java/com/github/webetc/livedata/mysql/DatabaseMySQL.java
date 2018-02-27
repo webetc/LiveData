@@ -15,6 +15,7 @@ import java.util.Map;
 
 public class DatabaseMySQL extends LiveTransactionDatabase {
 
+    private BinaryLogClient client;
     private Map<String, Long> lastTableId = new HashMap<>();
     private String hostname;
     private Integer port;
@@ -38,6 +39,12 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
         this.user = user;
         this.password = password;
         start();
+    }
+
+
+    public void close() throws Exception {
+        super.close();
+        client.disconnect();
     }
 
 
@@ -65,9 +72,13 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
         LiveResponse response = new LiveResponse(LiveResponse.Modify, schema, table);
         String tablePath = schema.toLowerCase() + "." + table.toLowerCase();
         String idCol = getPrimaryKey(schema, table);
-        String where = "where " + idCol + " > " + lastTableId.get(tablePath);
+        Long lastId = lastTableId.get(tablePath);
+        if (lastId == null)
+            lastId = 0L;
+        String where = "where " + idCol + " > " + lastId;
         if (getData(response, where)) {
-            lastTableId.put(tablePath, response.largestId);
+            if (response.largestId > lastId)
+                lastTableId.put(tablePath, response.largestId);
             return response;
         }
         return new LiveResponse(LiveResponse.Error, schema, table);
@@ -196,7 +207,7 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
         Class.forName("com.mysql.jdbc.Driver");
 
         // Start the replication client
-        BinaryLogClient client = new BinaryLogClient(hostname, port, user, password);
+        client = new BinaryLogClient(hostname, port, user, password);
         client.registerEventListener(this::processDatabaseEvent);
 
         try {

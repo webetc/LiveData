@@ -52,6 +52,7 @@ public abstract class LiveDatabase {
     }
 
 
+    private boolean running = true;
     protected List<LiveTable> liveTables = new CopyOnWriteArrayList<>();
     private BlockingQueue<LiveEvent> operationQueue = new LinkedBlockingDeque<>();
     private Map<String, String> primaryKeys = new HashMap<>();
@@ -60,7 +61,7 @@ public abstract class LiveDatabase {
     public LiveDatabase() {
         // LiveEvent queue processing thread
         Thread thread = new Thread(() -> {
-            while (true) {
+            while (running) {
                 try {
                     LiveEvent event = operationQueue.take();
                     if (LiveEventRequest.class.isInstance(event)) {
@@ -89,6 +90,11 @@ public abstract class LiveDatabase {
         });
 
         thread.start();
+    }
+
+
+    public void close() throws Exception {
+        running = false;
     }
 
 
