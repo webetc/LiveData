@@ -50,7 +50,7 @@ public class LiveKeyCollection implements LiveObserver {
         database.add(LiveDatabase.LiveEvent.create(
                 table.getSchemaName(),
                 table.getTableName(),
-                keyColumn + " = " + key,
+                "where " + keyColumn + " = " + key,
                 observer));
     }
 
@@ -156,7 +156,7 @@ public class LiveKeyCollection implements LiveObserver {
         }
 
         // Notify watchers of matching rows
-        if (response.getRecords().size() > 0)
+        if (response.getRecords() != null && response.getRecords().size() > 0)
             observer.send(response);
     }
 

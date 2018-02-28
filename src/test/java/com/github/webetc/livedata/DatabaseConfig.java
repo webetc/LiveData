@@ -24,6 +24,19 @@ import static com.wix.mysql.distribution.Version.v5_7_latest;
 
 public class DatabaseConfig {
 
+    private static class TestDatabaseMySQL extends DatabaseMySQL {
+
+        public TestDatabaseMySQL(String hostname, Integer port, String user, String password) throws ClassNotFoundException {
+            super(hostname, port, user, password);
+        }
+
+        public void resetLastIds() {
+            // Reset tracking of last primary keys when reloading schema
+            this.lastTableId.clear();
+        }
+    }
+
+
     private static EmbeddedMysql mysqld;
     private static SchemaConfig schema;
     private static String url;
@@ -31,7 +44,7 @@ public class DatabaseConfig {
     private static String password = "";
     private static int port = 4306;
     private static String schemaName = "example";
-    private static LiveDatabase database = null;
+    private static TestDatabaseMySQL database = null;
 
 
     public static LiveDatabase getDatabase() throws Exception {
@@ -52,6 +65,7 @@ public class DatabaseConfig {
         if (url == null)
             setup();
         mysqld.reloadSchema(schema);
+        database.resetLastIds();
     }
 
 
@@ -85,7 +99,12 @@ public class DatabaseConfig {
     }
 
 
-    private static synchronized void setup() throws Exception {
+    public static LiveKeyCollection createCollection(String table, String key, String value, LiveObserver observer) {
+        return new LiveKeyCollection(schemaName, table, key, value, database, observer);
+    }
+
+
+    public static synchronized void setup() throws Exception {
         if (url == null) {
             url = "jdbc:mysql://localhost:" + port + "/" + schemaName;
 
@@ -108,8 +127,14 @@ public class DatabaseConfig {
                     .addSchema(schema)
                     .start();
 
-            database = new DatabaseMySQL("localhost", 4306, "root", "");
+            database = new TestDatabaseMySQL("localhost", 4306, "root", "");
         }
+    }
+
+
+    public static void shutdown() throws Exception {
+        database.close();
+        mysqld.stop();
     }
 
 
@@ -118,7 +143,7 @@ public class DatabaseConfig {
         for (List<String> row : response.getRecords()) {
             Map<String, String> m = new HashMap<>();
             for (int i = 0; i < response.getColumns().size(); i++) {
-                m.put(response.getColumns().get(i), row.get(i).toString());
+                m.put(response.getColumns().get(i), row.get(i));
             }
             rows.add(m);
         }

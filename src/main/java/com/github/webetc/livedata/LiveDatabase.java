@@ -16,12 +16,6 @@ public abstract class LiveDatabase {
             return new LiveEventRequest(schema, table, where, observer);
         }
 
-        public static LiveEvent create(LiveResponse response) {
-            Collection<LiveResponse> responses = new ArrayList<>(1);
-            responses.add(response);
-            return new LiveEventResponse(responses);
-        }
-
         public static LiveEvent create(Collection<LiveResponse> responses) {
             return new LiveEventResponse(responses);
         }
@@ -83,7 +77,7 @@ public abstract class LiveDatabase {
                             }
                         }
                     }
-                } catch (InterruptedException e) {
+                } catch (Throwable e) {
                     e.printStackTrace();
                 }
             }
@@ -105,11 +99,6 @@ public abstract class LiveDatabase {
 
     public void add(LiveTable table) {
         liveTables.add(table);
-    }
-
-
-    public void remove(LiveTable table) {
-        liveTables.remove(table);
     }
 
 

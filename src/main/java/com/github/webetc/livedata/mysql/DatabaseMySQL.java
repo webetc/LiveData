@@ -16,7 +16,7 @@ import java.util.Map;
 public class DatabaseMySQL extends LiveTransactionDatabase {
 
     private BinaryLogClient client;
-    private Map<String, Long> lastTableId = new HashMap<>();
+    protected Map<String, Long> lastTableId = new HashMap<>();
     private String hostname;
     private Integer port;
     private String url;
@@ -259,6 +259,4 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
 
         }
     }
-
-
 }

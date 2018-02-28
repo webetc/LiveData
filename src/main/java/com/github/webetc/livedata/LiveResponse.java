@@ -27,24 +27,12 @@ public class LiveResponse {
         return action;
     }
 
-    public void setAction(String action) {
-        this.action = action;
-    }
-
     public String getSchema() {
         return schema;
     }
 
-    public void setSchema(String schema) {
-        this.schema = schema;
-    }
-
     public String getTable() {
         return table;
-    }
-
-    public void setTable(String table) {
-        this.table = table;
     }
 
     public int getIdColumnIndex() {
@@ -65,7 +53,7 @@ public class LiveResponse {
 
     public void addColumn(String columnName) {
         if (columns == null)
-            columns = new ArrayList<>();
+            setColumns(new ArrayList<>());
         columns.add(columnName);
     }
 
@@ -79,7 +67,7 @@ public class LiveResponse {
 
     public void addRecord(List<String> record) {
         if (records == null)
-            records = new ArrayList<>();
+            setRecords(new ArrayList<>());
 
         records.add(record);
     }
