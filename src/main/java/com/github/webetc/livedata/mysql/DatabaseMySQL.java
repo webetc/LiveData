@@ -131,6 +131,7 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
         ResultSet rs = null;
         String schema = response.getSchema();
         String table = response.getTable();
+        String sql = null;
 
         try {
             String idCol = getPrimaryKey(schema, table);
@@ -140,9 +141,10 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
             con = DriverManager.getConnection(url, user, password);
             Statement stmt = con.createStatement();
             if (where != null)
-                rs = stmt.executeQuery("select * from " + schema + "." + table + " " + where);
+                sql = "select * from " + schema + "." + table + " " + where;
             else
-                rs = stmt.executeQuery("select * from " + schema + "." + table);
+                sql = "select * from " + schema + "." + table;
+            rs = stmt.executeQuery(sql);
             ResultSetMetaData rsmd = rs.getMetaData();
             int idColIndex = 0;
 
@@ -182,6 +184,7 @@ public class DatabaseMySQL extends LiveTransactionDatabase {
 
             return true;
         } catch (Exception e) {
+            System.err.println(sql);
             e.printStackTrace();
         } finally {
             try {

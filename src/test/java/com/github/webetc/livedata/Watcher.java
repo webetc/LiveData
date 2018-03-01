@@ -1,28 +1,47 @@
 package com.github.webetc.livedata;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class Watcher implements LiveObserver {
     private LiveResponse last = null;
+    private List<LiveResponse> responseList = new ArrayList<>();
 
     @Override
     public void send(LiveResponse response) {
-        last = response;
+        synchronized (responseList) {
+            last = response;
+            responseList.add(response);
+        }
     }
 
     public void reset() {
-        last = null;
+        synchronized (responseList) {
+            last = null;
+            responseList.clear();
+        }
     }
 
     public LiveResponse getLast() throws Exception {
+        List<LiveResponse> responses = get(1);
+        return responses.get(responses.size() - 1);
+    }
+
+    public List<LiveResponse> get(int num) throws Exception {
         int count = 0;
-        while (last == null) {
+        int lim = 5 + (5*num);
+        while (responseList.size() < num) {
             Thread.sleep(100);
             count++;
-            if (count > 10)
-                throw new Exception("Missing expected response");
+            if (count > lim)
+                throw new Exception("Missing expected responses");
         }
 
-        LiveResponse response = last;
-        last = null;
-        return response;
+        List<LiveResponse> responses = new ArrayList<>();
+        synchronized (responseList) {
+            responses.addAll(responseList);
+        }
+        reset();
+        return responses;
     }
 }

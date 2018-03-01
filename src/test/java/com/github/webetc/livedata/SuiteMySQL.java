@@ -6,7 +6,12 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 
 @RunWith(Suite.class)
-@Suite.SuiteClasses({TestMySQL.class, TestLiveTable.class, TestLiveKeyCollection.class})
+@Suite.SuiteClasses({
+        TestMySQL.class,
+        TestLiveTable.class,
+        TestLiveKeyCollection.class,
+        TestLiveJoinCollection.class
+})
 public class SuiteMySQL {
     @ClassRule
     public static ExternalResource getResource() {

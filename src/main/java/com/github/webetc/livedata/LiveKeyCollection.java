@@ -4,25 +4,13 @@ import java.util.*;
 
 public class LiveKeyCollection implements LiveObserver {
 
-    private LiveDatabase database;
-    private LiveTable table;
-    private LiveObserver observer;
+    protected LiveDatabase database;
+    protected LiveTable table;
+    protected LiveObserver observer;
     private String keyColumn;
     private final Collection<String> keyConstraints = new HashSet<>();
     private final Map<String, String> idKeyIndex = new HashMap<>();
     private final Map<String, Collection<String>> keyIdIndex = new HashMap<>();
-
-
-    public LiveKeyCollection(String schemaName, String tableName,
-                             String keyColumn, Collection<String> keyConstraints,
-                             LiveDatabase database, LiveObserver watcher) {
-        this.database = database;
-        this.table = LiveTable.get(schemaName, tableName, database);
-        this.keyColumn = keyColumn.toLowerCase();
-        this.keyConstraints.addAll(keyConstraints);
-        this.observer = watcher;
-        table.addWatcher(this);
-    }
 
 
     public LiveKeyCollection(String schemaName, String tableName,
@@ -34,6 +22,16 @@ public class LiveKeyCollection implements LiveObserver {
         this.keyConstraints.add(constraint);
         this.observer = watcher;
         table.addWatcher(this);
+    }
+
+    public LiveKeyCollection(String schemaName, String tableName,
+                             String keyColumn,
+                             LiveDatabase database, LiveObserver watcher) {
+        this.database = database;
+        this.table = LiveTable.get(schemaName, tableName, database);
+        this.keyColumn = keyColumn.toLowerCase();
+        this.observer = watcher;
+        table.addWatcher(this, false);
     }
 
 
@@ -50,8 +48,47 @@ public class LiveKeyCollection implements LiveObserver {
         database.add(LiveDatabase.LiveEvent.create(
                 table.getSchemaName(),
                 table.getTableName(),
-                "where " + keyColumn + " = " + key,
-                observer));
+                "where " + keyColumn + " = '" + key + "'",
+                this));
+    }
+
+
+    public void addConstraints(Collection<String> keys) {
+        if (keys == null || keys.size() == 0)
+            return;
+
+        if (keys.size() == 1) {
+            addConstraint(keys.iterator().next());
+            return;
+        }
+
+        synchronized (keyConstraints) {
+            keyConstraints.addAll(keys);
+        }
+
+        StringBuilder where = new StringBuilder("where " + keyColumn + " in (");
+        boolean first = true;
+        for (String key : keys) {
+            if (first) {
+                first = false;
+                where
+                        .append("'")
+                        .append(key)
+                        .append("'");
+            } else {
+                where
+                        .append(", '")
+                        .append(key)
+                        .append("'");
+            }
+        }
+        where.append(")");
+
+        database.add(LiveDatabase.LiveEvent.create(
+                table.getSchemaName(),
+                table.getTableName(),
+                where.toString(),
+                this));
     }
 
 
@@ -73,6 +110,34 @@ public class LiveKeyCollection implements LiveObserver {
                 }
             }
         }
+
+        if (keyIds != null && keyIds.size() > 0)
+            notifyIdRemoval(keyIds);
+    }
+
+
+    public void removeConstraints(Collection<String> keys) {
+        synchronized (keyConstraints) {
+            for (String key : keys)
+                keyConstraints.remove(key);
+        }
+
+        // Remove rows from existing indexes
+        Collection<String> keyIds = new ArrayList<>();
+        synchronized (keyIdIndex) {
+            for (String key : keys) {
+                keyIds.addAll(keyIdIndex.get(key));
+                keyIdIndex.remove(key);
+            }
+        }
+        synchronized (idKeyIndex) {
+            for (String id : keyIds) {
+                idKeyIndex.remove(id);
+            }
+        }
+
+        if (keyIds.size() > 0)
+            notifyIdRemoval(keyIds);
     }
 
 
@@ -108,6 +173,8 @@ public class LiveKeyCollection implements LiveObserver {
         LiveResponse response = cloneResponse(input);
         int idCol = input.getIdColumnIndex();
         Integer keyColIndex = null;
+        Collection<String> addedIds = new ArrayList<>();
+        Collection<String> removedIds = new ArrayList<>();
 
         // Find key column
         for (int i = 0; i < input.getColumns().size(); i++) {
@@ -144,6 +211,7 @@ public class LiveKeyCollection implements LiveObserver {
                     */
                     updateIdIndex(id, key);
                     addRow = true;
+                    addedIds.add(id);
                 }
             }
 
@@ -151,13 +219,45 @@ public class LiveKeyCollection implements LiveObserver {
                 response.addRecord(row);
                 if (response.getAction().equals(LiveResponse.Delete)) {
                     updateIdIndex(id, null);
+                    removedIds.add(id);
                 }
             }
         }
 
-        // Notify watchers of matching rows
+        // Notify watcher of matching rows
         if (response.getRecords() != null && response.getRecords().size() > 0)
             observer.send(response);
+
+        if (addedIds.size() > 0)
+            this.addedIds(addedIds);
+        if (removedIds.size() > 0)
+            this.removedIds(removedIds);
+    }
+
+
+    protected void addedIds(Collection<String> ids) {
+
+    }
+
+
+    protected void removedIds(Collection<String> ids) {
+
+    }
+
+
+    private void notifyIdRemoval(Collection<String> ids) {
+        removedIds(ids);
+
+        // Not removed from db but need removed from observer
+        LiveResponse response = new LiveResponse(LiveResponse.Delete, table.getSchemaName(), table.getTableName());
+        response.addColumn(database.getPrimaryKey(table.getSchemaName(), table.getTableName()));
+        for (String id : ids) {
+            List<String> row = new ArrayList<>();
+            row.add(id);
+            response.addRecord(row);
+        }
+
+        observer.send(response);
     }
 
 

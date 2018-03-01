@@ -92,6 +92,12 @@ public class TestLiveKeyCollection {
 
         // remove
         collection.removeConstraint("1");
+        response = watcher.getLast();
+        assertEquals(LiveResponse.Delete, response.getAction());
+        assertEquals("phone", response.getTable());
+        assertEquals(1, response.getRecords().size());
+
+        // no longer watching for phone events on userId 1
         results = DatabaseConfig.query("select * from phone where userId = 1");
         assertEquals(1, results.size());
         String phoneId = results.get(0).get("id");

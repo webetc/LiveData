@@ -38,6 +38,13 @@ public class LiveTable extends LiveObservable {
     }
 
 
+    public void addWatcher(LiveObserver o, boolean load) {
+        super.addWatcher(o);
+        if (load)
+            database.add(LiveDatabase.LiveEvent.create(this.schemaName, this.tableName, o));
+    }
+
+
     public String getSchemaName() {
         return schemaName;
     }
